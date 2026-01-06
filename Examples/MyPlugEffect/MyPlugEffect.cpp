@@ -150,29 +150,54 @@ void link_controls(view& view_)
   link_control(2, view_);
 }
 
+auto make_child_window(rect bounds, char const* title)
+{
+  using cycfi::elements::image;
+  std::string base_dir = get_executable_dir();
+  std::string image_path = base_dir + "/resources/images/space.jpg";
+  return standard_child_window(title, bounds, hmin_size(250, scroller(image{image_path})));
+}
 
+void SetMaximizeBox(HWND hWnd)
+{
+  // 1. Get the current window style
+  LONG currentStyle = GetWindowLong(hWnd, GWL_STYLE);
 
+  // 2. Add the WS_MAXIMIZEBOX flag using bitwise OR
+  // Ensure WS_SYSMENU and WS_CAPTION are also present for the button to show up correctly
+  LONG newStyle = currentStyle | WS_MAXIMIZEBOX | WS_SYSMENU | WS_CAPTION | WS_SIZEBOX;
+
+  // 3. Set the new window style
+  SetWindowLong(hWnd, GWL_STYLE, newStyle);
+
+  // 4. Force a redraw of the window frame
+  SetWindowPos(hWnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+}
 
 void* MyPlugEffect::OpenWindow(void* pParent) { // ... inside OpenWindow ...
   using namespace cycfi::elements;
 
+  SetMaximizeBox((HWND)pParent);
   // 1. Force the theme into existence globally
   // We use a static local here to ensure it lives as long as the DLL is loaded
   static theme my_theme;
-
-  auto handle = static_cast<host_view_handle>(pParent);
+  
+  auto handle = static_cast<host_window_handle>(pParent);
   
   try
   {
+    // window _win("Test"); // creates a new window
     // 2. Direct allocation
     // If this crashes, the issue is inside the Windows API calls Elements makes
     auto* raw_view = new view(handle);
 
     // 3. Now it is safe to reset the unique_ptr
     mView.reset(raw_view);
+    
 
-    //mView->content(layer(align_center(label("Elements is Live")), box(colors::black)));
-    mView->content(background);
+
+    mView->content(layer(align_center(label("Elements is Live")), box(colors::black)));
+//    mView->content(min_size({700, 700},background));
 
     // 1. Get the directory and append your relative path
     std::string base_dir = get_executable_dir();
@@ -199,17 +224,19 @@ void* MyPlugEffect::OpenWindow(void* pParent) { // ... inside OpenWindow ...
                            box(colors::black)          // The base background
                            ));*/
 
-      mView->content(make_controls(), hstretch(1.0f,background));
+      mView->content(layer(make_controls(), align_center(background)), empty());
        // The slider on top))
       // File exists, now safe to call the constructor
       //mView->content(scroller(image{image_path}));
-      min_size({700, 700}, mView->content());
+     
     }
 
 
     link_controls(*mView);
+    
+    mView->add(share(make_child_window({50, 50, 400, 300}, "Child Window")));
 
-    return pParent;
+    return mView->host();
 
   }
   catch (...)
@@ -228,3 +255,19 @@ void MyPlugEffect::OnUIOpen() {
     
 }
 
+void MyPlugEffect::OnParentWindowResize(int w, int h)
+{
+  if (mView)
+  {
+    // 1. Get the handle Elements is using
+    HWND hWnd = (HWND)mView->host();
+
+    // 2. Force the child window (your plugin) to fill the parent
+    // This removes the 'clipping box' effect
+    SetWindowPos(hWnd, NULL, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+    // 3. Now tell Elements the new size is safe to use
+    //mView->resize({float(w), float(h)});
+    mView->refresh();
+  }
+}
